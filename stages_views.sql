@@ -1,54 +1,48 @@
 USE ROLE accountadmin;
 
----> create tasty_bytes database
+/*--
+database, schema and warehouse creation
+--*/
+
+-- create tasty_bytes database
 CREATE OR REPLACE DATABASE tasty_bytes;
 
----> create raw_pos schema
+-- create raw_pos schema
 CREATE OR REPLACE SCHEMA tasty_bytes.raw_pos;
 
----> create raw_customer schema
+-- create raw_customer schema
 CREATE OR REPLACE SCHEMA tasty_bytes.raw_customer;
 
----> create harmonized schema
+-- create harmonized schema
 CREATE OR REPLACE SCHEMA tasty_bytes.harmonized;
 
----> create analytics schema
+-- create analytics schema
 CREATE OR REPLACE SCHEMA tasty_bytes.analytics;
 
----> create warehouses
+-- create warehouse for ingestion
 CREATE OR REPLACE WAREHOUSE demo_build_wh
-    WAREHOUSE_SIZE = 'xxxlarge'
+    WAREHOUSE_SIZE = 'xlarge'
     WAREHOUSE_TYPE = 'standard'
     AUTO_SUSPEND = 60
     AUTO_RESUME = TRUE
-    INITIALLY_SUSPENDED = TRUE
-COMMENT = 'demo build warehouse for tasty bytes assets';
-    
-CREATE OR REPLACE WAREHOUSE tasty_de_wh
-    WAREHOUSE_SIZE = 'xsmall'
-    WAREHOUSE_TYPE = 'standard'
-    AUTO_SUSPEND = 60
-    AUTO_RESUME = TRUE
-    INITIALLY_SUSPENDED = TRUE
-COMMENT = 'data engineering warehouse for tasty bytes';
+    INITIALLY_SUSPENDED = TRUE;
 
-USE WAREHOUSE tasty_de_wh;
+/*--
+file format and stage creation
+--*/
 
----> file format creation
 CREATE OR REPLACE FILE FORMAT tasty_bytes.public.csv_ff 
 type = 'csv';
 
----> stage creation
 CREATE OR REPLACE STAGE tasty_bytes.public.s3load
-url = 's3://sfquickstarts/frostbyte_tastybytes/'
+url = 's3://sfquickstarts/tasty-bytes-builder-education/'
 file_format = tasty_bytes.public.csv_ff;
----> example of creating an internal stage
--- CREATE OR REPLACE STAGE tasty_bytes.public.internal_stage_test;
 
----> list files in stage
-ls @tasty_bytes.public.s3load;
+/*--
+ raw zone table build 
+--*/
 
----> country table build
+-- country table build
 CREATE OR REPLACE TABLE tasty_bytes.raw_pos.country
 (
     country_id NUMBER(18,0),
@@ -60,7 +54,7 @@ CREATE OR REPLACE TABLE tasty_bytes.raw_pos.country
     city_population VARCHAR(16777216)
 );
 
----> franchise table build
+-- franchise table build
 CREATE OR REPLACE TABLE tasty_bytes.raw_pos.franchise 
 (
     franchise_id NUMBER(38,0),
@@ -72,7 +66,7 @@ CREATE OR REPLACE TABLE tasty_bytes.raw_pos.franchise
     phone_number VARCHAR(16777216) 
 );
 
----> location table build
+-- location table build
 CREATE OR REPLACE TABLE tasty_bytes.raw_pos.location
 (
     location_id NUMBER(19,0),
@@ -84,7 +78,7 @@ CREATE OR REPLACE TABLE tasty_bytes.raw_pos.location
     country VARCHAR(16777216)
 );
 
----> menu table build
+-- menu table build
 CREATE OR REPLACE TABLE tasty_bytes.raw_pos.menu
 (
     menu_id NUMBER(19,0),
@@ -100,7 +94,7 @@ CREATE OR REPLACE TABLE tasty_bytes.raw_pos.menu
     menu_item_health_metrics_obj VARIANT
 );
 
----> truck table build 
+-- truck table build 
 CREATE OR REPLACE TABLE tasty_bytes.raw_pos.truck
 (
     truck_id NUMBER(38,0),
@@ -119,7 +113,7 @@ CREATE OR REPLACE TABLE tasty_bytes.raw_pos.truck
     truck_opening_date DATE
 );
 
----> order_header table build
+-- order_header table build
 CREATE OR REPLACE TABLE tasty_bytes.raw_pos.order_header
 (
     order_id NUMBER(38,0),
@@ -140,7 +134,7 @@ CREATE OR REPLACE TABLE tasty_bytes.raw_pos.order_header
     order_total NUMBER(38,4)
 );
 
----> order_detail table build
+-- order_detail table build
 CREATE OR REPLACE TABLE tasty_bytes.raw_pos.order_detail 
 (
     order_detail_id NUMBER(38,0),
@@ -154,7 +148,7 @@ CREATE OR REPLACE TABLE tasty_bytes.raw_pos.order_detail
     order_item_discount_amount VARCHAR(16777216)
 );
 
----> customer loyalty table build
+-- customer loyalty table build
 CREATE OR REPLACE TABLE tasty_bytes.raw_customer.customer_loyalty
 (
     customer_id NUMBER(38,0),
@@ -174,7 +168,11 @@ CREATE OR REPLACE TABLE tasty_bytes.raw_customer.customer_loyalty
     phone_number VARCHAR(16777216)
 );
 
----> orders_v view
+/*--
+harmonized view creation
+--*/
+
+-- orders_v view
 CREATE OR REPLACE VIEW tasty_bytes.harmonized.orders_v
     AS
 SELECT 
@@ -224,7 +222,7 @@ JOIN tasty_bytes.raw_pos.location l
 LEFT JOIN tasty_bytes.raw_customer.customer_loyalty cl
     ON oh.customer_id = cl.customer_id;
 
----> loyalty_metrics_v view
+-- loyalty_metrics_v view
 CREATE OR REPLACE VIEW tasty_bytes.harmonized.customer_loyalty_metrics_v
     AS
 SELECT 
@@ -243,57 +241,58 @@ ON cl.customer_id = oh.customer_id
 GROUP BY cl.customer_id, cl.city, cl.country, cl.first_name,
 cl.last_name, cl.phone_number, cl.e_mail;
 
----> orders_v view
+/*--
+analytics view creation
+--*/
+
+-- orders_v view
 CREATE OR REPLACE VIEW tasty_bytes.analytics.orders_v
 COMMENT = 'Tasty Bytes Order Detail View'
     AS
 SELECT DATE(o.order_ts) AS date, * FROM tasty_bytes.harmonized.orders_v o;
 
----> customer_loyalty_metrics_v view
+-- customer_loyalty_metrics_v view
 CREATE OR REPLACE VIEW tasty_bytes.analytics.customer_loyalty_metrics_v
 COMMENT = 'Tasty Bytes Customer Loyalty Member Metrics View'
     AS
 SELECT * FROM tasty_bytes.harmonized.customer_loyalty_metrics_v;
 
+/*--
+ raw zone table load 
+--*/
+
 USE WAREHOUSE demo_build_wh;
 
----> country table load
+-- country table load
 COPY INTO tasty_bytes.raw_pos.country
 FROM @tasty_bytes.public.s3load/raw_pos/country/;
 
----> franchise table load
+-- franchise table load
 COPY INTO tasty_bytes.raw_pos.franchise
 FROM @tasty_bytes.public.s3load/raw_pos/franchise/;
 
----> location table load
+-- location table load
 COPY INTO tasty_bytes.raw_pos.location
 FROM @tasty_bytes.public.s3load/raw_pos/location/;
 
----> menu table load
+-- menu table load
 COPY INTO tasty_bytes.raw_pos.menu
 FROM @tasty_bytes.public.s3load/raw_pos/menu/;
 
----> truck table load
+-- truck table load
 COPY INTO tasty_bytes.raw_pos.truck
 FROM @tasty_bytes.public.s3load/raw_pos/truck/;
 
----> customer_loyalty table load
+-- customer_loyalty table load
 COPY INTO tasty_bytes.raw_customer.customer_loyalty
 FROM @tasty_bytes.public.s3load/raw_customer/customer_loyalty/;
 
----> order_header table load
+-- order_header table load
 COPY INTO tasty_bytes.raw_pos.order_header
-FROM @tasty_bytes.public.s3load/raw_pos/order_header/;
+FROM @tasty_bytes.public.s3load/raw_pos/subset_order_header/;
 
----> order_detail table load
+-- order_detail table load
 COPY INTO tasty_bytes.raw_pos.order_detail
-FROM @tasty_bytes.public.s3load/raw_pos/order_detail/;
+FROM @tasty_bytes.public.s3load/raw_pos/subset_order_detail/;
 
----> drop demo_build_wh
-DROP WAREHOUSE IF EXISTS demo_build_wh;
-
-USE WAREHOUSE TASTY_DE_WH;
-
-SELECT file_name, error_count, status, last_load_time FROM snowflake.account_usage.copy_history
-  ORDER BY last_load_time DESC
-  LIMIT 10;
+DROP WAREHOUSE demo_build_wh;
