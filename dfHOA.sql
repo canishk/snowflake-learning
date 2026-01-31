@@ -1,0 +1,4 @@
+SELECT * FROM TASTY_BYTES.RAW_POS.MENU LIMIT 10;
+
+SELECT * FROM TASTY_BYTES.RAW_POS.MENU 
+where truck_brand_name='The Mac Shack';
